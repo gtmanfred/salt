@@ -47,13 +47,11 @@ import sys
 # import salt libs
 import salt.utils.json
 from salt.ext import six
-from salt.exceptions import SaltInvocationError, SaltMasterError
 
 try:
     import psycopg2
-    HAS_PG = True
 except ImportError:
-    HAS_PG = False
+    psycopg2 = None
 
 import logging
 log = logging.getLogger(__name__)
@@ -63,46 +61,12 @@ __virtualname__ = 'pgjsonb'
 
 
 def __virtual__():
-    if HAS_PG is False:
-        return False
-    return __virtualname__
+    return __utils__['postgres.available']()
 
 
-@contextmanager
-def _conn(commit=False):
-    '''
-    Return an postgres cursor
-    '''
-    defaults = {'host': 'localhost',
-                'user': 'salt',
-                'password': 'salt',
-                'dbname': 'salt',
-                'port': 5432}
-
-    conn_kwargs = {}
-    for key, value in defaults.items():
-        conn_kwargs[key] = __opts__.get('queue.{0}.{1}'.format(__virtualname__, key), value)
-    try:
-        conn = psycopg2.connect(**conn_kwargs)
-    except psycopg2.OperationalError as exc:
-        raise SaltMasterError('pgjsonb returner could not connect to database: {exc}'.format(exc=exc))
-
-    cursor = conn.cursor()
-
-    try:
-        yield cursor
-    except psycopg2.DatabaseError as err:
-        error = err.args
-        sys.stderr.write(six.text_type(error))
-        cursor.execute("ROLLBACK")
-        raise err
-    else:
-        if commit:
-            cursor.execute("COMMIT")
-        else:
-            cursor.execute("ROLLBACK")
-    finally:
-        conn.close()
+def __init__():
+    if psycopg2:
+        __utils__['postgres.assign_funcs'](__name__, 'queue')
 
 
 def _list_tables(cur):
